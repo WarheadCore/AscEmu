@@ -1,28 +1,67 @@
 # Copyright (c) 2014-2021 AscEmu Team <http://www.ascemu.org>
 
-include(CheckCXXCompilerFlag)
-CHECK_CXX_COMPILER_FLAG("-std=c++17" COMPILER_SUPPORTS_CXX17)
+# Set build-directive (used in core to tell which buildtype we used)
+target_compile_definitions(ascemu-compile-option-interface
+  INTERFACE
+    -D_BUILD_DIRECTIVE="${CMAKE_BUILD_TYPE}")
 
-if (NOT COMPILER_SUPPORTS_CXX17)
-    message(FATAL_ERROR "AscEmu requires at least GCC 8! Current version ${CMAKE_CXX_COMPILER} does not support c++17 feature")
-endif ()
+set(GCC_EXPECTED_VERSION 8.0.0)
 
-message(STATUS "Applying settings for ${CMAKE_CXX_COMPILER}")
-add_definitions(-DHAS_CXX0X)
+if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS GCC_EXPECTED_VERSION)
+  message(FATAL_ERROR "GCC: This project requires version ${GCC_EXPECTED_VERSION} to build but found ${CMAKE_CXX_COMPILER_VERSION}")
+else()
+  message(STATUS "GCC: Minimum version required is ${GCC_EXPECTED_VERSION}, found ${CMAKE_CXX_COMPILER_VERSION} - ok!")
+endif()
 
-# apply base flags
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=c11 -O2")
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17 -O2")
+if(PLATFORM EQUAL 32)
+  # Required on 32-bit systems to enable SSE2 (standard on x64)
+  target_compile_options(ascemu-compile-option-interface
+    INTERFACE
+      -msse2
+      -mfpmath=sse)
+endif()
 
-if (IS_64BIT)
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fPIC")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fPIC")
-endif ()
+target_compile_definitions(ascemu-compile-option-interface
+  INTERFACE
+    -DHAVE_SSE2
+    -D__SSE2__)
+message(STATUS "GCC: SFMT enabled, SSE2 flags forced")
 
-if (BUILD_WITH_WARNINGS)
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra")
-else ()
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -w")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -w")
-endif ()
+if( WITH_WARNINGS )
+  target_compile_options(ascemu-warning-interface
+  INTERFACE
+    -W
+    -Wall
+    -Wextra
+    -Winit-self
+    -Winvalid-pch
+    -Wfatal-errors
+    -Woverloaded-virtual)
+  message(STATUS "GCC: All warnings enabled")
+endif()
+
+if( WITH_COREDEBUG )
+  target_compile_options(ascemu-compile-option-interface
+  INTERFACE
+    -g3)
+  message(STATUS "GCC: Debug-flags set (-g3)")
+endif()
+
+if(BUILD_SHARED_LIBS)
+  target_compile_options(ascemu-compile-option-interface
+    INTERFACE
+      -fPIC
+      -Wno-attributes)
+
+  target_compile_options(ascemu-hidden-symbols-interface
+    INTERFACE
+      -fvisibility=hidden)
+
+  # Should break the build when there are WARHEAD_*_API macros missing
+  # but it complains about missing references in precompiled headers.
+  # set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wl,--no-undefined")
+  # set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wl,--no-undefined")
+
+  message(STATUS "GCC: Enabled shared linking")
+endif()
+

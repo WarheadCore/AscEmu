@@ -1,33 +1,154 @@
 # Copyright (c) 2014-2021 AscEmu Team <http://www.ascemu.org>
 
-if (MSVC_VERSION VERSION_LESS 19.28)
-    message(FATAL_ERROR "AscEmu requires at least Visual Studio 2019 update 16.9")
-endif ()
+# set up output paths for executable binaries (.exe-files, and .dll-files on DLL-capable platforms)
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+
+set(MSVC_EXPECTED_VERSION 19.28)
+set(MSVC_EXPECTED_VERSION_STRING "Microsoft Visual Studio 2019 16.9")
+
+if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS MSVC_EXPECTED_VERSION)
+  message(FATAL_ERROR "MSVC: AscEmu requires version ${MSVC_EXPECTED_VERSION} (${MSVC_EXPECTED_VERSION_STRING}) to build but found ${CMAKE_CXX_COMPILER_VERSION}")
+else()
+  message(STATUS "MSVC: Minimum version required is ${MSVC_EXPECTED_VERSION}, found ${CMAKE_CXX_COMPILER_VERSION} - ok!")
+endif()
 
 message(STATUS "Applying settings for ${CMAKE_CXX_COMPILER_ID}")
 
-add_definitions(-D_CRT_SECURE_NO_WARNINGS)
+# CMake sets warning flags by default, however we manage it manually
+# for different core and dependency targets
+string(REGEX REPLACE "/W[0-4] " "" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+# Search twice, once for space after /W argument,
+# once for end of line as CMake regex has no \b
+string(REGEX REPLACE "/W[0-4]$" "" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+string(REGEX REPLACE "/W[0-4] " "" CMAKE_C_FLAGS "${CMAKE_C_FLAGS}")
+string(REGEX REPLACE "/W[0-4]$" "" CMAKE_C_FLAGS "${CMAKE_C_FLAGS}")
 
-# set defines for msvc
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /std:c++17 /EHa /MP /bigobj")
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /std:c++17 /EHa /MP /bigobj")
+# https://tinyurl.com/jxnc4s83
+target_compile_options(ascemu-compile-option-interface
+    INTERFACE
+      /utf-8)
 
-# set build platform specific settings (x86/x64)
-if (NOT IS_64BIT)
-    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /LARGEADDRESSAWARE")
-endif ()
+if(PLATFORM EQUAL 64)
+  # This definition is necessary to work around a bug with Intellisense described
+  # here: http://tinyurl.com/2cb428.  Syntax highlighting is important for proper
+  # debugger functionality.
+  target_compile_definitions(ascemu-compile-option-interface
+    INTERFACE
+      -D_WIN64)
+  message(STATUS "MSVC: 64-bit platform, enforced -D_WIN64 parameter")
 
-if (TREAT_WARNINGS_AS_ERRORS)
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /WX")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /WX")
-endif ()
+  # Enable extended object support for debug compiles on X64 (not required on X86)
+  set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} /bigobj")
+  message(STATUS "MSVC: Enabled extended object-support for debug-compiles")
+else()
+  # mark 32 bit executables large address aware so they can use > 2GB address space
+  set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /LARGEADDRESSAWARE")
+  message(STATUS "MSVC: Enabled large address awareness")
 
-# enable/disable warnings
-# dll warning 4251 disabled by default.
-if (BUILD_WITH_WARNINGS)
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /Wall /wd4251 /wd4820 /wd4062 /wd4061 /wd5045")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /Wall /wd4251 /wd4820 /wd4062 /wd4061 /wd5045")
-else ()
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /W0")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /W0")
-endif ()
+  target_compile_options(ascemu-compile-option-interface
+    INTERFACE
+      /arch:SSE2)
+  message(STATUS "MSVC: Enabled SSE2 support")
+endif()
+
+# Set build-directive (used in core to tell which buildtype we used)
+# msbuild/devenv don't set CMAKE_MAKE_PROGRAM, you can choose build type from a dropdown after generating projects
+if("${CMAKE_MAKE_PROGRAM}" MATCHES "MSBuild")
+  target_compile_definitions(ascemu-compile-option-interface
+    INTERFACE
+      -D_BUILD_DIRECTIVE="$(ConfigurationName)")
+else()
+  # while all make-like generators do (nmake, ninja)
+  target_compile_definitions(ascemu-compile-option-interface
+    INTERFACE
+      -D_BUILD_DIRECTIVE="${CMAKE_BUILD_TYPE}")
+endif()
+
+# multithreaded compiling on VS
+target_compile_options(ascemu-compile-option-interface
+  INTERFACE
+    /MP)
+
+# Define _CRT_SECURE_CPP_OVERLOAD_STANDARD_NAMES - eliminates the warning by changing the strcpy call to strcpy_s, which prevents buffer overruns
+target_compile_definitions(ascemu-compile-option-interface
+  INTERFACE
+    -D_CRT_SECURE_CPP_OVERLOAD_STANDARD_NAMES)
+message(STATUS "MSVC: Overloaded standard names")
+
+# Ignore warnings about older, less secure functions
+target_compile_definitions(ascemu-compile-option-interface
+  INTERFACE
+    -D_CRT_SECURE_NO_WARNINGS)
+message(STATUS "MSVC: Disabled NON-SECURE warnings")
+
+# Ignore warnings about POSIX deprecation
+target_compile_definitions(ascemu-compile-option-interface
+  INTERFACE
+    -D_CRT_NONSTDC_NO_WARNINGS)
+message(STATUS "MSVC: Disabled POSIX warnings")
+
+# Ignore warnings about INTMAX_MAX
+target_compile_definitions(ascemu-compile-option-interface
+  INTERFACE
+    -D__STDC_LIMIT_MACROS)
+message(STATUS "MSVC: Disabled INTMAX_MAX warnings")
+
+# disable warnings in Visual Studio 8 and above if not wanted
+if(NOT WITH_WARNINGS)
+  if(MSVC AND NOT CMAKE_GENERATOR MATCHES "Visual Studio 7")
+  target_compile_options(ascemu-warning-interface
+    INTERFACE
+      /wd4996
+      /wd4355
+      /wd4244
+      /wd4985
+      /wd4267
+      /wd4619)
+    message(STATUS "MSVC: Disabled generic compiletime warnings")
+  endif()
+endif()
+
+# Ignore specific warnings
+# C4351: new behavior: elements of array 'x' will be default initialized
+# C4091: 'typedef ': ignored on left of '' when no variable is declared
+target_compile_options(ascemu-compile-option-interface
+  INTERFACE
+    /wd4351
+    /wd4091)
+
+# Specify the maximum PreCompiled Header memory allocation limit
+# Fixes a compiler-problem when using PCH - the /Ym flag is adjusted by the compiler in MSVC2012, hence we need to set an upper limit with /Zm to avoid discrepancies)
+# (And yes, this is a verified , unresolved bug with MSVC... *sigh*)
+string(REGEX REPLACE "/Zm[0-9]+ *" "" CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS})
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /Zm500")
+
+# Enable and treat as errors the following warnings to easily detect virtual function signature failures:
+# 'function' : member function does not override any base class virtual member function
+# 'virtual_function' : no override available for virtual member function from base 'class'; function is hidden
+target_compile_options(ascemu-warning-interface
+  INTERFACE
+    /we4263
+    /we4264)
+
+if (BUILD_SHARED_LIBS)
+  # C4251: needs to have dll-interface to be used by clients of class '...'
+  # C4275: non dll-interface class ...' used as base for dll-interface class '...'
+  target_compile_options(ascemu-compile-option-interface
+    INTERFACE
+      /wd4251
+      /wd4275)
+
+  message(STATUS "MSVC: Enabled shared linking")
+endif()
+
+# Disable incremental linking in debug builds.
+# To prevent linking getting stuck (which might be fixed in a later VS version).
+macro(DisableIncrementalLinking variable)
+  string(REGEX REPLACE "/INCREMENTAL *" "" ${variable} "${${variable}}")
+  set(${variable} "${${variable}} /INCREMENTAL:NO")
+endmacro()
+
+DisableIncrementalLinking(CMAKE_EXE_LINKER_FLAGS_DEBUG)
+DisableIncrementalLinking(CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO)
+DisableIncrementalLinking(CMAKE_SHARED_LINKER_FLAGS_DEBUG)
+DisableIncrementalLinking(CMAKE_SHARED_LINKER_FLAGS_RELWITHDEBINFO)

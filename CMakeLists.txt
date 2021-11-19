@@ -1,10 +1,40 @@
 # Copyright (c) 2014-2021 AscEmu Team <http://www.ascemu.org>
-project(Ascemu)
 
 cmake_minimum_required(VERSION 3.16)
 
-# set runtime binary where all compiled (before install) binary will compiled in
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+message(STATUS "CMake version: ${CMAKE_VERSION}")
+
+# CMake policies (can not be handled elsewhere)
+# cmake_policy(SET CMP0005 NEW)
+
+project(Ascemu)
+
+# add this options before PROJECT keyword
+set(CMAKE_DISABLE_SOURCE_CHANGES ON)
+set(CMAKE_DISABLE_IN_SOURCE_BUILD ON)
+
+# Set RPATH-handing (CMake parameters)
+set(CMAKE_SKIP_BUILD_RPATH 0)
+set(CMAKE_BUILD_WITH_INSTALL_RPATH 0)
+set(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/lib")
+set(CMAKE_INSTALL_RPATH_USE_LINK_PATH 1)
+
+# set macro-directory
+list(APPEND CMAKE_MODULE_PATH
+    "${CMAKE_SOURCE_DIR}/cmake/Modules")
+
+include(CheckCXXSourceRuns)
+include(CheckIncludeFiles)
+
+# build in Release-mode by default if not explicitly set
+if(NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE "RelWithDebInfo")
+endif()
+
+include(ConfigureBaseTargets)
+include(CheckPlatform)
+include(GroupSources)
+include(AutoCollect)
 
 # set build type on unix if it wasn't defined by user
 if (UNIX)
@@ -28,16 +58,13 @@ endif ()
 # needed for windows
 find_package(OpenSSL)
 
+find_package(PCHSupport)
+
 # cmake options
 include(${CMAKE_SOURCE_DIR}/cmake/Options.cmake)
 
 # perform system tasks
-include(${CMAKE_SOURCE_DIR}/cmake/CheckSystem.cmake)
-
-# set RPATH-handing (CMake parameters)
-set(CMAKE_SKIP_BUILD_RPATH FALSE)
-set(CMAKE_BUILD_WITH_INSTALL_RPATH FALSE)
-set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
+# include(${CMAKE_SOURCE_DIR}/cmake/CheckSystem.cmake)
 
 # add dependecies
 add_subdirectory(dep)

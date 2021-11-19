@@ -1,107 +1,44 @@
 # Copyright (c) 2014-2021 AscEmu Team <http://www.ascemu.org>
 
-# set up our project name
-project(shared CXX)
+CollectSourceFiles(
+  ${CMAKE_CURRENT_SOURCE_DIR}
+  PRIVATE_SOURCES
+  # Exclude
+  ${CMAKE_CURRENT_SOURCE_DIR}/PrecompiledHeaders)
 
-include(Auth/CMakeLists.txt)
-include(Config/CMakeLists.txt)
-include(Database/CMakeLists.txt)
-include(Exceptions/CMakeLists.txt)
-include(Logging/CMakeLists.txt)
-include(Network/CMakeLists.txt)
-include(Threading/CMakeLists.txt)
-include(Util/CMakeLists.txt)
+# Group sources
+GroupSources(${CMAKE_CURRENT_SOURCE_DIR})
 
-set(sources
-    ${SRC_AUTH_FILES}
-    ${SRC_CONFIG_FILES}
-    ${SRC_DATABASE_FILES}
-    ${SRC_EXCEPTIONS_FILES}
-    ${SRC_LOGGING_FILES}
-    ${SRC_NETWORK_FILES}
-    ${SRC_THREADING_FILES}
-    ${SRC_UTIL_FILES}
+add_library(shared
+  ${PRIVATE_SOURCES})
 
-    CrashHandler.cpp
-    crc32.cpp
-    CThreads.cpp
-    DynLib.cpp
-    LocationVector.cpp
-    Log.cpp
-    PerformanceCounter.cpp
-    SysInfo.cpp
-    Util.cpp
-)
+CollectIncludeDirectories(
+  ${CMAKE_CURRENT_SOURCE_DIR}
+  PUBLIC_INCLUDES
+  # Exclude
+  ${CMAKE_CURRENT_SOURCE_DIR}/PrecompiledHeaders)
 
-set(headers
-    AscemuServerDefines.hpp
-    AuthCodes.h
-    ByteBuffer.h
-    ByteConverter.h
-    CallBack.h
-    CircularQueue.h
-    Common.Legacy.h
-    CommonDefines.hpp
-    CommonHelpers.hpp
-    CommonTypes.hpp
-    CrashHandler.h
-    crc32.h
-    CThreads.h
-    DynLib.hpp
-    Errors.h
-    FastQueue.h
-    LocationVector.h
-    LogonCommDefines.h
-    PerformanceCounter.hpp
-    PreallocatedQueue.h
-    RC4Engine.h
-    SysInfo.hpp
-    TLSObject.h
-    WorldPacket.h
-    WoWGuid.h
+target_include_directories(shared
+  PUBLIC
+    # Provide the binary dir for all child targets
+    ${CMAKE_BINARY_DIR}
+    ${PUBLIC_INCLUDES}
+  PRIVATE
+    ${CMAKE_CURRENT_BINARY_DIR})
 
-    Common.hpp
-    Log.hpp
-    LogDefines.hpp
-    Util.hpp
-    FactoryHolder.h
-    ObjectRegistry.h
-)
+target_link_libraries(shared
+  PRIVATE
+    ascemu-core-interface
+  PUBLIC
+    zlib
+    mysql
+    utf8cpp
+    openssl
+    threads
+    stdfs
+    ${EXTRA_LIBS})
 
-include_directories(
-    ${OPENSSL_INCLUDE_DIR}
-    ${ZLIB_INCLUDE_DIRS}
-    ${MYSQL_INCLUDE_DIR}
-    ${CMAKE_CURRENT_SOURCE_DIR}
-    ${CMAKE_SOURCE_DIR}/dep/utf8cpp
-)
-
-add_library(${PROJECT_NAME} STATIC ${sources} ${headers})
-target_link_libraries(${PROJECT_NAME} ${ZLIB_LIBRARIES} ${CMAKE_THREAD_LIBS_INIT} ${MYSQL_LIBRARY} ${OPENSSL_LIBRARIES} ${EXTRA_LIBS})
-configure_file(${CMAKE_CURRENT_SOURCE_DIR}/Common.hpp.in ${CMAKE_CURRENT_SOURCE_DIR}/Common.hpp)
-
-if (APPLE)
-    target_link_libraries(${PROJECT_NAME} c++)
-elseif (CMAKE_SYSTEM_NAME STREQUAL "FreeBSD" OR CMAKE_SYSTEM_NAME STREQUAL "kFreeBSD")
-    target_link_libraries(${PROJECT_NAME} c++experimental)
-elseif (NOT WIN32)
-    target_link_libraries(${PROJECT_NAME} stdc++fs)
-endif ()
-
+# Generate precompiled header
 if (USE_PCH)
-    target_precompile_headers(${PROJECT_NAME}
-    PRIVATE
-    <iostream>
-    <list>
-    <vector>
-    <map>
-    <sstream>
-    <string>
-    <atomic>
-    Common.hpp
-    Util.hpp
-)
+  add_cxx_pch(shared PrecompiledHeaders/sharedPCH.h)
 endif ()
-
-unset(sources)
-unset(headers)
